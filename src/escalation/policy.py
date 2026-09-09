@@ -30,6 +30,8 @@ from typing import Any, Optional
 
 import yaml
 
+from .safety import detect_unsupported_actions, SafetyCheckResult
+
 logger = logging.getLogger(__name__)
 
 ESCALATE = "ESCALATE"
@@ -77,6 +79,7 @@ class EscalationPolicy:
         retrieved_evidence: list[dict[str, Any]],
         grounding_score: float,
         generation_failed: bool = False,
+        draft_reply: str = "",
     ) -> EscalationResult:
         """
         Evaluate all escalation rules and return a decision.
@@ -87,12 +90,13 @@ class EscalationPolicy:
             retrieved_evidence: list of retrieved interaction dicts
             grounding_score: generation grounding score (0.0–1.0)
             generation_failed: True if the LLM call failed entirely
+            draft_reply: generated reply text (for unsupported action scan)
 
         Returns: EscalationResult with decision, reason, and risk flags
         """
         risk_flags: list[str] = []
 
-        # Rule 1: Generation failed — no usable reply
+        # Rule 0: Generation failed — no usable reply
         if generation_failed:
             return EscalationResult(
                 decision=ESCALATE,
@@ -100,6 +104,20 @@ class EscalationPolicy:
                 risk_flags=["generation_failed"],
             )
 
+        # Rule 1: Unsupported action detected in reply (safety-critical)
+        if draft_reply:
+            safety = detect_unsupported_actions(draft_reply)
+            if safety.has_unsupported_action:
+                flags = [f"unsupported_action:{v}" for v in safety.violations]
+                return EscalationResult(
+                    decision=ESCALATE,
+                    decision_reason=(
+                        f"Reply contains unsupported action claim(s): "
+                        f"{', '.join(safety.violations)}. "
+                        "Agent cannot actually perform these actions — routing to human."
+                    ),
+                    risk_flags=flags,
+                )
         # Rule 2: High-risk intent — always escalate regardless of confidence
         if intent in self.high_risk_intents:
             risk_flags.append(f"high_risk_intent:{intent}")

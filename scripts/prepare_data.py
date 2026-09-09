@@ -91,12 +91,14 @@ def main(args: argparse.Namespace) -> None:
 
     # ── Step 2: Load customer tweets ─────────────────────────────────────────
     logger.info("Step 2: Loading customer tweets...")
-    brand_tweet_ids = set(brand_df["tweet_id"].astype(int).tolist())
-    inbound_tweet_ids_needed: set[int] = set()
+    # customer_tweet_ids = tweet IDs that SpotifyCares directly replied to
+    # These come from brand tweets' in_response_to_tweet_id column (float64, clean).
+    customer_tweet_ids: set[int] = set()
     for tid in brand_df["in_response_to_tweet_id"].dropna():
-        inbound_tweet_ids_needed.add(int(tid))
+        customer_tweet_ids.add(int(tid))
+    logger.info("Unique customer tweet IDs to fetch: %d", len(customer_tweet_ids))
 
-    customer_df = load_inbound_for_brand(raw_csv, brand_tweet_ids, chunk_size=chunk_size)
+    customer_df = load_inbound_for_brand(raw_csv, customer_tweet_ids, chunk_size=chunk_size)
     logger.info("Customer tweets loaded: %d", len(customer_df))
 
     # ── Step 3: Clean ────────────────────────────────────────────────────────

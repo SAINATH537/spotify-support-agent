@@ -199,6 +199,7 @@ class SpotifySupportAgent:
             retrieved_evidence=retrieved,
             grounding_score=gen_result["grounding_score"],
             generation_failed=gen_result.get("generation_failed", False),
+            draft_reply=gen_result["draft_reply"],  # scanned for unsupported actions
         )
 
         latency = (time.perf_counter() - t0) * 1000

@@ -1,0 +1,32 @@
+{
+  "brand": "SpotifyCares",
+  "random_seed": 42,
+  "brand_tweets": 5000,
+  "customer_tweets": 41697,
+  "reconstructed_pairs": 4992,
+  "retrieval_worthy_pairs": 1262,
+  "conversations": 4992,
+  "interactions_for_retrieval": 1262,
+  "resolution_type_counts": {
+    "other": 2620,
+    "private_escalation": 1110,
+    "clarification_request": 741,
+    "informational": 448,
+    "troubleshooting": 73
+  },
+  "weak_intent_counts": {
+    "Other / Ambiguous": 1312,
+    "Playback / Audio": 1062,
+    "App / Device / Technical": 786,
+    "Account / Login / Security": 578,
+    "Premium / Subscription": 454,
+    "Ads": 247,
+    "Content Availability": 238,
+    "Billing / Payment": 234,
+    "Feature / Product Question": 46,
+    "Playlist / Library": 35
+  },
+  "golden_set_size": 250,
+  "sample_mode": true,
+  "sample_size": 5000
+}

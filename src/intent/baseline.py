@@ -99,7 +99,6 @@ class TFIDFLogisticRegression:
                 max_iter=max_iter,
                 random_state=random_state,
                 class_weight="balanced",
-                multi_class="multinomial",
                 solver="lbfgs",
             )),
         ])

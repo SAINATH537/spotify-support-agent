@@ -159,16 +159,17 @@ def reconstruct_pairs(
     brand = brand_df.copy()
     customer = customer_df.copy()
 
-    # Brand rows must have in_response_to_tweet_id to know which customer they answered
+    # Brand rows must have in_response_to_tweet_id to know which customer they answered.
+    # in_response_to_tweet_id is float64 (NaN-capable); all non-NaN values are clean integers.
     brand = brand[brand["in_response_to_tweet_id"].notna()].copy()
-    brand["in_response_to_tweet_id"] = brand["in_response_to_tweet_id"].astype(int)
+    brand["_parent_id"] = brand["in_response_to_tweet_id"].astype(int)
 
     # Build lookup: tweet_id → customer row
     cust_lookup = customer.set_index("tweet_id")
 
     rows = []
     for _, brow in brand.iterrows():
-        cust_id = int(brow["in_response_to_tweet_id"])
+        cust_id = int(brow["_parent_id"])
         if cust_id not in cust_lookup.index:
             continue
         crow = cust_lookup.loc[cust_id]
