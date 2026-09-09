@@ -1,0 +1,10 @@
+candidate_intent,keyword_matched_messages,percent_of_43092_pairs,note
+App / Device / Technical,8818,20.46,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Account / Login / Security,6209,14.41,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Premium / Subscription,5898,13.69,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Playlist / Library,5004,11.61,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Playback / Audio,4777,11.09,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Billing / Payment,3440,7.98,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Feature / Product Question,1239,2.88,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Ads,787,1.83,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.
+Content Availability,336,0.78,Exploratory keyword prevalence only; intents overlap and this is not final labelled class frequency.

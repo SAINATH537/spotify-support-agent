@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpotifyCares AI Support Agent</title>
+  <meta name="description" content="AI-powered customer support agent for SpotifyCares — intent classification, RAG retrieval, and escalation policy demo." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="11" fill="#1DB954"/>
+            <path d="M17.5 16.5c-.2 0-.3-.1-.5-.2-2.2-1.3-4.9-1.6-8.1-.9-.3.1-.6-.1-.7-.4-.1-.3.1-.6.4-.7 3.5-.8 6.5-.4 9 1.1.3.2.4.5.2.8-.1.2-.2.3-.3.3zM18.7 13.7c-.2 0-.4-.1-.5-.2-2.5-1.5-6.3-2-9.3-1.1-.4.1-.7-.1-.8-.5-.1-.4.1-.7.5-.8 3.4-1 7.6-.5 10.5 1.3.3.2.4.6.2.9-.1.3-.4.4-.6.4zM18.8 10.9c-3-1.8-7.9-1.9-10.7-1.1-.5.1-.9-.2-1-.7-.1-.5.2-.9.7-1 3.2-.9 8.5-.8 11.9 1.3.4.3.6.8.3 1.2-.2.4-.8.5-1.2.3z" fill="white"/>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <span class="logo-title">SpotifyCares</span>
+          <span class="logo-sub">AI Support Agent</span>
+        </div>
+      </div>
+      <div class="header-badge" id="status-badge">
+        <span class="badge-dot"></span>
+        <span class="badge-text">Checking...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main layout -->
+  <main class="main">
+    <div class="layout">
+
+      <!-- Left panel: Input -->
+      <section class="panel panel-input">
+        <div class="panel-header">
+          <h1 class="panel-title">Customer Message</h1>
+          <p class="panel-subtitle">Simulate an incoming support tweet</p>
+        </div>
+
+        <div class="examples-section">
+          <p class="section-label">Quick examples</p>
+          <div class="examples-grid" id="examples-grid">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <div class="input-section">
+          <textarea
+            id="message-input"
+            class="message-input"
+            placeholder="Type a customer message… e.g. 'I can't log into my account!'"
+            rows="5"
+            maxlength="500"
+          ></textarea>
+          <div class="input-footer">
+            <span class="char-count"><span id="char-count">0</span>/500</span>
+            <button id="submit-btn" class="btn btn-primary" onclick="runAgent()">
+              <span class="btn-text">Analyse Message</span>
+              <span class="btn-icon">→</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dataset stats -->
+        <div class="stats-card" id="stats-card">
+          <p class="section-label">Dataset Stats</p>
+          <div class="stats-grid" id="stats-grid">
+            <div class="stat-item skeleton"><div class="skeleton-line"></div></div>
+            <div class="stat-item skeleton"><div class="skeleton-line"></div></div>
+            <div class="stat-item skeleton"><div class="skeleton-line"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right panel: Results -->
+      <section class="panel panel-result" id="result-panel">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">🤖</div>
+          <p class="empty-title">Ready to analyse</p>
+          <p class="empty-sub">Submit a customer message to see the agent's response</p>
+        </div>
+
+        <div class="result-content" id="result-content" style="display:none">
+
+          <!-- Intent + Decision row -->
+          <div class="result-top-row">
+            <div class="result-card intent-card">
+              <p class="card-label">Detected Intent</p>
+              <p class="card-value" id="res-intent">—</p>
+              <div class="confidence-bar">
+                <div class="confidence-fill" id="confidence-fill"></div>
+              </div>
+              <p class="confidence-text"><span id="res-confidence">0</span>% confidence</p>
+            </div>
+
+            <div class="result-card decision-card" id="decision-card">
+              <p class="card-label">Decision</p>
+              <div class="decision-badge" id="decision-badge">
+                <span class="decision-icon" id="decision-icon">⚡</span>
+                <span class="decision-text" id="decision-text">—</span>
+              </div>
+              <p class="decision-reason" id="decision-reason">—</p>
+            </div>
+          </div>
+
+          <!-- Risk flags -->
+          <div class="result-card" id="risk-flags-card" style="display:none">
+            <p class="card-label">⚠️ Risk Flags</p>
+            <div class="risk-flags" id="risk-flags-list"></div>
+          </div>
+
+          <!-- Draft reply -->
+          <div class="result-card reply-card">
+            <p class="card-label">🗨️ Draft Reply</p>
+            <div class="draft-reply" id="res-reply">—</div>
+            <div class="reply-meta">
+              <span class="grounding-badge" id="grounding-badge">Grounding: —</span>
+              <span class="latency-badge" id="latency-badge">—ms</span>
+            </div>
+          </div>
+
+          <!-- Retrieved evidence -->
+          <div class="result-card evidence-card">
+            <p class="card-label">📚 Retrieved Evidence (<span id="evidence-count">0</span>)</p>
+            <div class="evidence-list" id="evidence-list"></div>
+          </div>
+
+        </div>
+
+        <!-- Loading state -->
+        <div class="loading-state" id="loading-state" style="display:none">
+          <div class="spinner"></div>
+          <p class="loading-text">Analysing message…</p>
+          <div class="loading-steps">
+            <div class="step active" id="step-intent">🎯 Classifying intent</div>
+            <div class="step" id="step-retrieve">🔍 Retrieving evidence</div>
+            <div class="step" id="step-generate">✍️ Generating reply</div>
+            <div class="step" id="step-escalate">⚖️ Evaluating escalation</div>
+          </div>
+        </div>
+
+      </section>
+    </div>
+  </main>
+
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

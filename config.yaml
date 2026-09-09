@@ -1,0 +1,163 @@
+# ============================================================
+# Spotify Support Agent — Central Configuration
+# ============================================================
+# All thresholds and parameters are configurable here.
+# Do NOT put secrets here. Use .env for API keys.
+
+# ── Reproducibility ──────────────────────────────────────────
+random_seed: 42
+
+# ── Data ─────────────────────────────────────────────────────
+data:
+  raw_csv: "data/raw/twcs.csv"
+  brand: "SpotifyCares"
+  processed_dir: "data/processed"
+  golden_dir: "data/golden"
+  results_dir: "results"
+  chunk_size: 100000               # rows per CSV read chunk
+  min_text_length: 5               # chars; shorter = drop
+  acknowledgement_threshold: 15    # chars; likely trivial close
+  language: "en"                   # English-only evaluation (v1)
+  sample_size: 5000                # rows for fast reproduce run (set null for full)
+  golden_sample_size: 250
+
+# ── Intent Taxonomy ──────────────────────────────────────────
+# Each intent has:
+#   label       : display name
+#   id          : integer class id
+#   keywords    : weak-labelling keywords (NOT used for training)
+#   high_risk   : if true, defaults to ESCALATE
+#   description : for documentation and prompt injection
+intents:
+  - id: 0
+    label: "Account / Login / Security"
+    high_risk: true
+    description: "Customer cannot log in, account is locked/hacked, password reset, suspicious activity, account deletion."
+    keywords: ["login", "log in", "password", "account", "locked", "hacked", "security", "sign in", "sign-in", "forgot", "reset", "access", "unauthorized", "suspicious", "compromised", "delete account"]
+
+  - id: 1
+    label: "Premium / Subscription"
+    high_risk: false
+    description: "Customer has questions about upgrading, downgrading, or managing their Spotify Premium subscription status."
+    keywords: ["premium", "subscription", "subscribe", "free account", "student plan", "family plan", "duo", "upgrade", "downgrade", "cancel", "cancellation", "plan", "membership"]
+
+  - id: 2
+    label: "Billing / Payment"
+    high_risk: true
+    description: "Customer reports unexpected charges, billing errors, refund requests, payment method issues."
+    keywords: ["charge", "charged", "bill", "billing", "payment", "refund", "invoice", "credit card", "debit", "transaction", "overcharged", "double charge", "money", "price", "fee", "cost"]
+
+  - id: 3
+    label: "Playback / Audio"
+    high_risk: false
+    description: "Music stops, skips, won't play, shuffle broken, audio quality issues, offline playback problems."
+    keywords: ["playback", "play", "song", "music", "shuffle", "skip", "stop", "pause", "audio", "quality", "sound", "stream", "offline", "download", "buffer", "lag", "stutter", "repeat"]
+
+  - id: 4
+    label: "App / Device / Technical"
+    high_risk: false
+    description: "App crashes, won't open, slow, not working on specific device, OS compatibility, Spotify Connect issues."
+    keywords: ["app", "crash", "freezing", "slow", "not working", "bug", "error", "device", "iphone", "android", "desktop", "windows", "mac", "linux", "tv", "ps4", "xbox", "connect", "update", "install", "reinstall"]
+
+  - id: 5
+    label: "Playlist / Library"
+    high_risk: false
+    description: "Songs missing from playlist/library, collaborative playlist issues, liked songs disappeared."
+    keywords: ["playlist", "library", "saved", "liked", "songs disappeared", "missing", "deleted playlist", "collaborative", "add to", "remove from", "your music", "collection"]
+
+  - id: 6
+    label: "Content Availability"
+    high_risk: false
+    description: "Song, album, or podcast not available in customer's region or has been removed."
+    keywords: ["not available", "unavailable", "region", "country", "removed", "taken down", "missing song", "album", "podcast", "content", "artist", "find", "search", "catalogue"]
+
+  - id: 7
+    label: "Ads"
+    high_risk: false
+    description: "Too many ads, inappropriate ad content, ads not working correctly on free tier."
+    keywords: ["ad", "ads", "advertisement", "commercial", "sponsor", "banner", "ad-free", "no ads"]
+
+  - id: 8
+    label: "Feature / Product Question"
+    high_risk: false
+    description: "Customer asks how a feature works, requests a new feature, or asks about platform capabilities."
+    keywords: ["how do i", "how to", "feature", "crossfade", "lyrics", "equalizer", "eq", "car mode", "social", "share", "collaborate", "group session", "blend", "wrapped", "stats", "discord"]
+
+  - id: 9
+    label: "Other / Ambiguous"
+    high_risk: false
+    description: "Message does not clearly fit any other category, or contains multiple unresolvable intents."
+    keywords: []
+
+# ── Resolution Type Filtering ─────────────────────────────────
+# Brand responses classified into these types.
+# Only "retrieval_worthy" types enter the FAISS index.
+resolution_types:
+  troubleshooting:
+    retrieval_worthy: true
+  informational:
+    retrieval_worthy: true
+  clarification_request:
+    retrieval_worthy: true
+  private_escalation:
+    retrieval_worthy: false   # DM redirect — not useful as evidence
+  acknowledgement:
+    retrieval_worthy: false   # "Thanks for reaching out!" — trivial
+  closing:
+    retrieval_worthy: false   # "Let us know if you need anything!" — trivial
+  other:
+    retrieval_worthy: false
+
+# ── Embedding Model ───────────────────────────────────────────
+embedding:
+  model_name: "all-MiniLM-L6-v2"
+  batch_size: 256
+  cache_dir: "data/processed/embedding_cache"
+
+# ── FAISS Retrieval ───────────────────────────────────────────
+retrieval:
+  index_path: "data/processed/faiss_index"
+  top_k: 5
+  intent_filter: true          # restrict retrieval to same predicted intent
+  intent_fallback_k: 3         # if intent-filtered returns < this, widen search
+  min_similarity: 0.30         # cosine similarity; below = escalate signal
+
+# ── LLM Generation ───────────────────────────────────────────
+generation:
+  provider: "gemini"           # "gemini" | "openai" | "stub"
+  model: "gemini-1.5-flash"
+  temperature: 0.2
+  max_output_tokens: 300
+  grounding_score_threshold: 0.40  # below = ESCALATE signal
+
+# ── Intent Classification ─────────────────────────────────────
+classification:
+  model_path: "data/processed/intent_model.joblib"
+  confidence_threshold: 0.55   # below = ESCALATE signal
+  test_split: 0.20
+  dev_split: 0.10              # carved from train (not from golden)
+
+# ── Escalation Policy ─────────────────────────────────────────
+escalation:
+  # High-risk intents always escalate regardless of confidence
+  high_risk_intents: ["Account / Login / Security", "Billing / Payment"]
+  # Additional rules (all must be False for AUTO_HANDLE)
+  min_intent_confidence: 0.55
+  min_retrieval_similarity: 0.30
+  min_grounding_score: 0.40
+  min_evidence_count: 1        # need at least 1 retrieved example
+
+# ── Evaluation ───────────────────────────────────────────────
+evaluation:
+  golden_set_path: "data/golden/spotify_golden_set_250.csv"
+  results_dir: "results"
+  judge_model: "gemini-1.5-flash"
+  judge_temperature: 0.0
+  human_agreement_sample: 50
+  automation_coverage_thresholds: [0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8]
+
+# ── Logging ───────────────────────────────────────────────────
+logging:
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+  log_file: "results/agent.log"

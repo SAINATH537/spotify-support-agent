@@ -1,0 +1,262 @@
+# SpotifyCares AI Support Agent
+### Hiver SDE Intern Take-Home Assignment
+
+A **production-minded** AI customer-support agent built on the [TWCS dataset](https://www.kaggle.com/datasets/thoughtvector/customer-support-on-twitter).
+
+---
+
+## Quick Start (< 15 minutes)
+
+```bash
+# 1. Clone and install
+git clone <repo-url>
+cd hiver-support-agent
+pip install -r requirements.txt
+
+# 2. Copy env and add your Gemini API key
+cp .env.example .env
+# Edit .env: GOOGLE_API_KEY=your_key_here
+
+# 3. Prepare data (fast sample mode)
+python scripts/prepare_data.py --sample 5000
+
+# 4. Build index + train classifiers
+python scripts/build_index.py --sample 3000
+
+# 5. Run the agent
+python scripts/run_agent.py --message "I can't log into my Spotify account!"
+
+# 6. Run all evaluation
+python scripts/reproduce_results.py --sample 200 --no-llm
+
+# 7. (Optional) Launch the web UI
+uvicorn ui.app:app --reload --port 8000
+# Open http://localhost:8000
+```
+
+> **No API key?** Use `--provider stub` with `run_agent.py` for a template-based response. All classification and retrieval still work.
+
+---
+
+## System Architecture
+
+```
+Customer message
+      │
+      ▼
+┌─────────────────────┐
+│  Text Normalisation │  URL→<URL>, @mention→<USER>, emoji preserved
+└──────────┬──────────┘
+           │
+      ▼
+┌─────────────────────┐
+│  Intent Classifier  │  SentenceTransformer (all-MiniLM-L6-v2) + LR
+│  (+ 2 baselines)   │  Confidence score → used by escalation policy
+└──────────┬──────────┘
+           │
+      ▼
+┌─────────────────────┐
+│  FAISS Retrieval    │  Intent-aware: filter by predicted intent first
+│                     │  Top-K similar historical interactions
+└──────────┬──────────┘
+           │
+      ▼
+┌─────────────────────┐
+│  LLM Generation     │  Gemini 1.5 Flash with strict grounding rules
+│  (Grounded RAG)     │  Returns structured JSON always
+└──────────┬──────────┘
+           │
+      ▼
+┌─────────────────────┐
+│  Escalation Policy  │  Deterministic rules — NOT LLM-decided
+│  (Rule-based)       │  6 ordered checks, all thresholds configurable
+└──────────┬──────────┘
+           │
+      ▼
+Structured JSON Response
+```
+
+---
+
+## Output Schema
+
+```json
+{
+  "intent": "Playback / Audio",
+  "intent_confidence": 0.82,
+  "retrieved_evidence": [
+    {
+      "interaction_id": "int_004312",
+      "similarity": 0.71,
+      "customer_message": "...",
+      "brand_response": "...",
+      "resolution_type": "troubleshooting",
+      "intent": "Playback / Audio"
+    }
+  ],
+  "draft_reply": "Hi! Try logging out and back in, then clear the cache under Settings → Storage. Let us know if that helps! 🎵",
+  "grounding_score": 0.68,
+  "decision": "AUTO_HANDLE",
+  "decision_reason": "All checks passed: intent='Playback / Audio' (conf=0.82), similarity=0.71, grounding=0.68.",
+  "risk_flags": [],
+  "latency_ms": 1842.3
+}
+```
+
+---
+
+## Intent Taxonomy
+
+10 intents derived from SpotifyCares data. Defined in `config.yaml` (not hard-coded):
+
+| # | Intent | High-Risk |
+|---|--------|-----------|
+| 1 | Account / Login / Security | ✅ Always escalate |
+| 2 | Premium / Subscription | ❌ |
+| 3 | Billing / Payment | ✅ Always escalate |
+| 4 | Playback / Audio | ❌ |
+| 5 | App / Device / Technical | ❌ |
+| 6 | Playlist / Library | ❌ |
+| 7 | Content Availability | ❌ |
+| 8 | Ads | ❌ |
+| 9 | Feature / Product Question | ❌ |
+| 10 | Other / Ambiguous | ❌ |
+
+**Classification principle**: Intent is based on the customer's **primary requested outcome**, not keyword matching.
+
+---
+
+## Escalation Rules (Priority Order)
+
+```python
+if generation_failed:         → ESCALATE
+elif high_risk_intent:        → ESCALATE (always, regardless of confidence)
+elif intent_confidence < 0.55: → ESCALATE
+elif evidence_count < 1:      → ESCALATE
+elif max_similarity < 0.30:   → ESCALATE
+elif grounding_score < 0.40:  → ESCALATE
+else:                         → AUTO_HANDLE
+```
+
+All thresholds are configurable in `config.yaml`.
+
+---
+
+## Classifiers
+
+| Classifier | Description | Headline Metric |
+|------------|-------------|-----------------|
+| `MajorityClassifier` | Always predicts most frequent class | Macro F1 ~0.05 (lower bound) |
+| `TFIDFLogisticRegression` | TF-IDF (1-2gram) + LR, `class_weight=balanced` | Macro F1 ~0.45–0.55 |
+| `SentenceTransformerClassifier` | all-MiniLM-L6-v2 + LR | Macro F1 ~0.55–0.70 |
+
+> **Why Macro F1?** Class distribution is imbalanced. Accuracy would be misleading — a model that only predicts "App / Device / Technical" would look ~20% accurate but provide zero value.
+
+---
+
+## Repository Structure
+
+```
+hiver-support-agent/
+├── README.md           ← this file
+├── requirements.txt
+├── .env.example
+├── config.yaml         ← all thresholds and intent definitions
+├── decision_log.md     ← 12 non-obvious engineering decisions
+│
+├── data/
+│   ├── raw/            ← twcs.csv (not committed, ~516 MB)
+│   ├── processed/      ← generated by prepare_data.py
+│   └── golden/         ← frozen evaluation set
+│
+├── src/
+│   ├── data/           ← load, clean, conversations
+│   ├── intent/         ← taxonomy, baseline, classifier
+│   ├── retrieval/      ← embeddings, faiss_store
+│   ├── generation/     ← prompts, generator
+│   ├── escalation/     ← policy
+│   └── agent.py        ← orchestrator
+│
+├── evaluation/         ← all evaluation modules
+├── scripts/            ← CLI entry points
+├── tests/              ← pytest unit tests
+├── ui/                 ← FastAPI + HTML/CSS/JS demo
+└── results/            ← experiment outputs
+```
+
+---
+
+## Running Tests
+
+```bash
+pytest tests/ -v
+pytest tests/ -v --cov=src --cov-report=term-missing
+```
+
+---
+
+## Data Pipeline
+
+The raw TWCS CSV is never fully loaded into memory. Processing uses **chunked streaming**:
+
+```
+twcs.csv (2.8M rows, 516MB)
+     ↓ chunked (100k rows at a time)
+SpotifyCares brand tweets (43,265)
+     ↓ join via in_response_to_tweet_id
+Customer–brand pairs (varies by sample)
+     ↓ classify resolution type
+Retrieval-worthy interactions (troubleshooting / informational / clarification)
+     ↓ embed with all-MiniLM-L6-v2
+FAISS index (cosine similarity, IndexFlatIP)
+```
+
+**Language scope**: English-only evaluation for v1. Non-English tweets are flagged (not deleted). Documented in `data/README.md`.
+
+---
+
+## Data Leakage Prevention
+
+- ✅ Golden set tweet IDs excluded from FAISS index at build time
+- ✅ Golden set NOT used for classifier training or threshold tuning
+- ✅ Intent taxonomy frozen before evaluation
+- ✅ LLM judge does NOT see gold labels
+- ✅ Deterministic seeds throughout (`random_seed: 42` in config)
+
+---
+
+## Key Configuration (`config.yaml`)
+
+```yaml
+random_seed: 42
+generation:
+  provider: gemini          # gemini | openai | stub
+  model: gemini-1.5-flash
+escalation:
+  high_risk_intents: ["Account / Login / Security", "Billing / Payment"]
+  min_intent_confidence: 0.55
+  min_retrieval_similarity: 0.30
+  min_grounding_score: 0.40
+```
+
+---
+
+## Limitations & What I Would Build Next
+
+1. **Gold labels are weak** — the 250-example golden set uses keyword heuristics; human verification is required before reporting headline numbers
+2. **English-only** — multilingual support would require language-specific models
+3. **No session state** — multi-turn context uses the raw prior message string; a proper dialogue state tracker would improve accuracy
+4. **Retrieval pool quality** — brand response quality varies widely; a human-rated quality filter would improve retrieved evidence
+5. **Threshold calibration** — thresholds are set conservatively; a proper Platt-scaled confidence calibration on a dev set would improve automation coverage
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | For Gemini | Get at [aistudio.google.com](https://aistudio.google.com) |
+| `OPENAI_API_KEY` | For OpenAI | Optional fallback |
+| `LLM_PROVIDER` | No | Default: from config.yaml |
+
+Set `provider: stub` in `config.yaml` to run without any API key.
