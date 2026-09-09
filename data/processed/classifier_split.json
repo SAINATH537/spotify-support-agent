@@ -1,0 +1,10 @@
+{
+  "train_size": 840,
+  "dev_size": 120,
+  "test_size": 240,
+  "seed": 42,
+  "test_split": 0.2,
+  "dev_split": 0.1,
+  "split_level": "tweet",
+  "note": "Conversation-level split not yet implemented"
+}
