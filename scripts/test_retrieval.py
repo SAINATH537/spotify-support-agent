@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import logging
 import sys
 from pathlib import Path
@@ -22,15 +23,26 @@ import yaml
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-logging.basicConfig(level=logging.WARNING)  # suppress INFO during demo
+# Force UTF-8 output so emoji in brand responses don't crash on Windows cp1252
+sys.stdout = io.TextIOWrapper(
+    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+)
+
+logging.basicConfig(level=logging.WARNING)
+
+
+def _s(text: str, max_len: int = 120) -> str:
+    """Truncate and replace unencodable characters."""
+    return str(text)[:max_len]
 
 
 def _load_index(cfg: dict):
     from src.retrieval.faiss_store import FAISSStore
     index_path = ROOT / cfg["retrieval"]["index_path"]
-    if not (Path(str(index_path)) / "index.faiss").exists():
+    idx_faiss = Path(str(index_path)) / "index.faiss"
+    if not idx_faiss.exists():
         print(f"\nERROR: FAISS index not found at {index_path}")
-        print("Run:  python scripts/build_index.py")
+        print("Run:  python scripts/_rebuild_faiss_only.py")
         sys.exit(1)
     return FAISSStore.load(index_path)
 
@@ -45,21 +57,21 @@ def _print_results(query: str, results: list[dict], top_k: int) -> None:
     print(f"\n{SEP}")
     print("RETRIEVAL DEMO")
     print(SEP)
-    print(f"\nQuery:\n  {query}\n")
+    print(f"\nQuery:\n  {_s(query)}\n")
     if not results:
         print("  (no results returned)")
         return
     for i, r in enumerate(results[:top_k], 1):
         print(f"Result {i}")
         print(f"  Similarity  : {r.get('similarity', 0):.4f}")
-        print(f"  Intent      : {r.get('intent', r.get('weak_intent', 'N/A'))}")
-        print(f"  Resolution  : {r.get('resolution_type', 'N/A')}")
+        print(f"  Intent      : {_s(r.get('intent', r.get('weak_intent', 'N/A')), 50)}")
+        print(f"  Resolution  : {_s(r.get('resolution_type', 'N/A'), 30)}")
         print(f"  Tweet IDs   : customer={r.get('customer_tweet_id','?')} "
               f"brand={r.get('brand_tweet_id','?')}")
-        cust = r.get("customer_message", "")
-        print(f"  Customer    : {cust[:100]}{'...' if len(cust)>100 else ''}")
-        resp = r.get("brand_response", "")
-        print(f"  SpotifyCares: {resp[:120]}{'...' if len(resp)>120 else ''}")
+        cust = _s(r.get("customer_message", ""), 100)
+        print(f"  Customer    : {cust}")
+        resp = _s(r.get("brand_response", ""), 120)
+        print(f"  SpotifyCares: {resp}")
         print()
     print(SEP)
 
@@ -105,7 +117,7 @@ SANITY_QUERIES = [
 
 def run_sanity_check(store, embed_model: str, top_k: int) -> None:
     print("\n" + "=" * 62)
-    print("RETRIEVAL SANITY CHECK — 25 representative queries")
+    print("RETRIEVAL SANITY CHECK - 25 representative queries")
     print("=" * 62)
     observations = []
 
@@ -115,24 +127,24 @@ def run_sanity_check(store, embed_model: str, top_k: int) -> None:
         top = results[0] if results else None
         if top:
             sim = top.get("similarity", 0)
-            resp = top.get("brand_response", "")[:80]
-            intent = top.get("intent", top.get("weak_intent", "?"))
-            cust_ctx = top.get("customer_message", "")[:60]
+            intent = _s(top.get("intent", top.get("weak_intent", "?")), 40)
+            cust_ctx = _s(top.get("customer_message", ""), 60)
+            resp = _s(top.get("brand_response", ""), 80)
             flag = ""
             if sim < 0.30:
-                flag = " ⚠️ LOW-SIM"
-            if len(resp) < 20:
-                flag += " ⚠️ SHORT-RESP"
+                flag = " [LOW-SIM]"
+            if len(str(top.get("brand_response", ""))) < 20:
+                flag += " [SHORT-RESP]"
             observations.append((query, sim, flag))
-            print(f"\n[{i:02d}] Query : {query[:70]}")
+            print(f"\n[{i:02d}] Query : {_s(query, 70)}")
             print(f"      Top-1  : sim={sim:.3f}{flag}")
             print(f"      Intent : {intent}")
             print(f"      Cust   : {cust_ctx}")
             print(f"      Reply  : {resp}")
         else:
-            observations.append((query, 0.0, " ⚠️ NO RESULTS"))
-            print(f"\n[{i:02d}] Query : {query[:70]}")
-            print(f"      ⚠️  No results returned")
+            observations.append((query, 0.0, " [NO RESULTS]"))
+            print(f"\n[{i:02d}] Query : {_s(query, 70)}")
+            print(f"      [WARNING] No results returned")
 
     print("\n" + "=" * 62)
     print("SANITY CHECK SUMMARY")
@@ -145,7 +157,7 @@ def run_sanity_check(store, embed_model: str, top_k: int) -> None:
     print(f"Max top-1 sim    : {max(sims):.3f}")
     print(f"Flagged queries  : {len(flagged)}")
     for q, f in flagged:
-        print(f"  {f} — {q[:60]}")
+        print(f"  {f} -- {_s(q, 60)}")
     print("=" * 62)
 
 
@@ -168,7 +180,7 @@ def main() -> None:
         sys.exit(0)
 
     config_path = ROOT / "config.yaml"
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         cfg = yaml.safe_load(f)
 
     embed_model = cfg["embedding"]["model_name"]

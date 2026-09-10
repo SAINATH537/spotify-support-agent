@@ -1,0 +1,14 @@
+{
+  "embedding_model": "all-MiniLM-L6-v2",
+  "n_indexed": 1200,
+  "n_excluded_golden": 62,
+  "vector_dim": 384,
+  "index_type": "IndexFlatIP (exact cosine similarity)",
+  "top_k_default": 5,
+  "index_path": "C:\\Users\\SAINATH\\OneDrive\\Desktop\\GitHUB\\spotify-support-agent\\data\\processed\\faiss_index",
+  "runtime_seconds": 0.1,
+  "seed": 42,
+  "intent_classifier": "TFIDFLogisticRegression",
+  "split_level": "tweet",
+  "split_warning": "Conversation-level split not yet implemented"
+}
