@@ -132,7 +132,7 @@ generation:
 
 # ── Intent Classification ─────────────────────────────────────
 classification:
-  model_path: "data/processed/intent_model.joblib"
+  model_path: "data/processed/tfidf_lr_clf.joblib"
   confidence_threshold: 0.55   # below = ESCALATE signal
   test_split: 0.20
   dev_split: 0.10              # carved from train (not from golden)

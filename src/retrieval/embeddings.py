@@ -1,18 +1,25 @@
 """
 src/retrieval/embeddings.py
 ─────────────────────────────────────────────────────────────────────────────
-Batch embedding utilities for building the FAISS index.
+Batch and single-query embedding utilities.
 
 Design decisions:
 - Embeddings are stored as float32 numpy arrays on disk.
 - The golden test set tweet IDs are excluded from the index
   to prevent data leakage (cannot evaluate on indexed examples).
 - Deterministic: no randomness; same input → same output always.
+- On Windows, torch/sentence_transformers may fail to load if sklearn/joblib
+  has already been imported in-process (c10.dll init order conflict).
+  embed_single falls back to a subprocess-based embedding to avoid this.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +41,7 @@ def embed_texts(
 
     Returns: float32 numpy array of shape (N, embedding_dim)
     """
+    import torch  # must precede sentence_transformers on Windows (DLL init order)
     from sentence_transformers import SentenceTransformer
 
     cache_dir_path = Path(cache_dir)
@@ -62,22 +70,83 @@ def embed_texts(
     return embeddings
 
 
+# In-process model cache — populated if torch loads cleanly
+_model_cache: dict = {}
+
+
 def embed_single(
     text: str,
     model_name: str = "all-MiniLM-L6-v2",
-    _model_cache: dict = {},
 ) -> np.ndarray:
     """
     Embed a single query text at inference time.
-    Model is loaded once and reused (simple in-process cache via mutable default).
+
+    Tries in-process first (fast, cached model). If torch fails to load
+    (Windows c10.dll init order conflict after sklearn), falls back to
+    a subprocess that imports torch before any sklearn code.
     """
-    from sentence_transformers import SentenceTransformer
-    if model_name not in _model_cache:
+    global _model_cache
+
+    # Try in-process (works if torch was imported before sklearn)
+    if model_name in _model_cache:
+        vec = _model_cache[model_name].encode(
+            [text], normalize_embeddings=True, convert_to_numpy=True
+        ).astype(np.float32)
+        return vec[0]
+
+    try:
+        import torch  # must be first
+        from sentence_transformers import SentenceTransformer
         _model_cache[model_name] = SentenceTransformer(model_name)
-    vec = _model_cache[model_name].encode(
-        [text], normalize_embeddings=True, convert_to_numpy=True
-    ).astype(np.float32)
-    return vec[0]
+        vec = _model_cache[model_name].encode(
+            [text], normalize_embeddings=True, convert_to_numpy=True
+        ).astype(np.float32)
+        return vec[0]
+    except OSError as e:
+        if "DLL" in str(e) or "WinError 1114" in str(e):
+            logger.warning(
+                "torch DLL init failed in-process (%s). "
+                "Falling back to subprocess embedding.", e
+            )
+            return _embed_single_subprocess(text, model_name)
+        raise
+
+
+def _embed_single_subprocess(text: str, model_name: str = "all-MiniLM-L6-v2") -> np.ndarray:
+    """
+    Embed one text in a fresh subprocess that imports torch before sklearn.
+    Adds ~1-2s overhead on first call; subsequent calls are fast if model is cached.
+    """
+    script = (
+        "import sys, json, numpy as np\n"
+        "import torch\n"
+        "from sentence_transformers import SentenceTransformer\n"
+        "text = json.loads(sys.argv[1])\n"
+        "model_name = sys.argv[2]\n"
+        "out_path = sys.argv[3]\n"
+        "model = SentenceTransformer(model_name)\n"
+        "vec = model.encode([text], normalize_embeddings=True, convert_to_numpy=True).astype('float32')\n"
+        "np.save(out_path, vec[0])\n"
+    )
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as sf:
+        sf.write(script)
+        script_path = sf.name
+    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as nf:
+        out_path = nf.name
+
+    try:
+        proc = subprocess.run(
+            [sys.executable, script_path, json.dumps(text), model_name, out_path],
+            capture_output=True, text=True, timeout=120,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Embedding subprocess failed:\n{proc.stderr[-500:]}"
+            )
+        return np.load(out_path).astype(np.float32)
+    finally:
+        Path(script_path).unlink(missing_ok=True)
+        Path(out_path).unlink(missing_ok=True)
 
 
 def exclude_ids(

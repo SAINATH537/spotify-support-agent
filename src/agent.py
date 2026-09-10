@@ -79,9 +79,13 @@ class SpotifySupportAgent:
     @property
     def classifier(self):
         if self._classifier is None:
-            from src.intent.classifier import SentenceTransformerClassifier
-            self._classifier = SentenceTransformerClassifier.load(self._classifier_path)
-            logger.info("Classifier loaded from %s", self._classifier_path)
+            try:
+                from src.intent.baseline import TFIDFLogisticRegression
+                self._classifier = TFIDFLogisticRegression.load(self._classifier_path)
+                logger.info("TF-IDF LR classifier loaded from %s", self._classifier_path)
+            except Exception as e:
+                logger.error("Classifier load failed: %s", e)
+                raise
         return self._classifier
 
     @property
@@ -167,6 +171,7 @@ class SpotifySupportAgent:
 
         # ── Step 3: Retrieval ────────────────────────────────────────────────
         try:
+            import torch  # must precede sentence_transformers import on Windows
             from src.retrieval.embeddings import embed_single
             query_vec = embed_single(clean_msg, model_name=self.cfg["embedding"]["model_name"])
             retrieved = self.faiss.search(
